@@ -1,11 +1,14 @@
 %% =============================================================================
 %% MÓDULO: sld_engine.pl
-%% Descripción: Motor de resolución SLD
+%% Descripción: Motor de resolución SLD (CORREGIDO - Sustituciones Visibles)
 %% =============================================================================
 
 :- module(sld_engine, [
     sld_resolution/3,
-    sld_resolution_with_depth/4
+    sld_resolution_with_depth/4,
+    count_nodes/2,
+    tree_depth/2,
+    find_all_solutions/2
 ]).
 
 :- use_module(unification).
@@ -14,9 +17,10 @@
 %% Estructura del árbol SLD:
 %% node(
 %%     GoalList,        % Lista de goals actuales [goal1, goal2, ...]
-%%     Substitution,    % Sustitución acumulada [X=a, Y=b, ...]
+%%     Substitution,    % Sustitución ACUMULADA hasta este nodo
+%%     NewSubst,        % Sustitución NUEVA aplicada en este paso
 %%     RuleApplied,     % Cláusula aplicada: clause(Head, Body) o 'query'
-%%     Status,          % success | failure | pending
+%%     Status,          % success | failure | pending | has_solution
 %%     Children         % Lista de nodos hijos
 %% )
 %% -----------------------------------------------------------------------------
@@ -24,9 +28,6 @@
 %% -----------------------------------------------------------------------------
 %% sld_resolution(+Program, +Query, -Tree)
 %% Genera el árbol SLD completo para una consulta
-%% Program: lista de cláusulas clause(Head, Body)
-%% Query: lista de goals
-%% Tree: árbol SLD completo
 %% -----------------------------------------------------------------------------
 
 sld_resolution(Program, Query, Tree) :-
@@ -39,60 +40,73 @@ sld_resolution(Program, Query, Tree) :-
 
 sld_resolution_with_depth(Program, Query, MaxDepth, Tree) :-
     MaxDepth > 0,
-    rename_variables(Query, RenamedQuery),
-    expand_sld_tree(Program, RenamedQuery, [], 'query', MaxDepth, Tree).
+    % NO renombramos la consulta inicial - mantenemos las variables originales
+    expand_sld_tree(Program, Query, [], [], 'query', MaxDepth, Tree).
 
 %% -----------------------------------------------------------------------------
-%% expand_sld_tree(+Program, +Goals, +Subst, +RuleApplied, +Depth, -Node)
+%% expand_sld_tree(+Program, +Goals, +AccSubst, +NewSubst, +Rule, +Depth, -Node)
 %% Expande un nodo del árbol SLD
+%% AccSubst: sustitución acumulada desde la raíz
+%% NewSubst: sustitución aplicada en ESTE paso específico
 %% -----------------------------------------------------------------------------
 
 % Caso éxito: no quedan goals por resolver
-expand_sld_tree(_, [], Subst, RuleApplied, _, Node) :- !,
-    Node = node([], Subst, RuleApplied, success, []).
+expand_sld_tree(_, [], AccSubst, NewSubst, RuleApplied, _, Node) :- !,
+    Node = node([], AccSubst, NewSubst, RuleApplied, success, []).
 
 % Caso límite de profundidad alcanzado
-expand_sld_tree(_, Goals, Subst, RuleApplied, 0, Node) :- !,
-    Node = node(Goals, Subst, RuleApplied, depth_limit, []).
+expand_sld_tree(_, Goals, AccSubst, NewSubst, RuleApplied, 0, Node) :- !,
+    Node = node(Goals, AccSubst, NewSubst, RuleApplied, depth_limit, []).
 
 % Caso general: expandir el primer goal
-expand_sld_tree(Program, [Goal|RestGoals], Subst, RuleApplied, Depth, Node) :-
+expand_sld_tree(Program, [Goal|RestGoals], AccSubst, NewSubst, RuleApplied, Depth, Node) :-
     Depth > 0,
     findall(
-        Child,
+        child_info(ChildNewSubst, Child),
         (
             % Encontrar una cláusula unificable
-            member(Clause, Program),
-            Clause = clause(Head, Body),
-            rename_clause(Clause, RenamedClause),
+            member(clause(ClauseHead, ClauseBody), Program),
+            % IMPORTANTE: Renombramos SOLO la cláusula, no la consulta
+            rename_clause(clause(ClauseHead, ClauseBody), RenamedClause),
             RenamedClause = clause(RenamedHead, RenamedBody),
             
-            % Intentar unificar
-            unify(Goal, RenamedHead, Subst, NewSubst),
+            % Aplicar la sustitución acumulada al goal actual antes de unificar
+            unification:apply_substitution(Goal, AccSubst, SubstGoal),
             
-            % Aplicar sustitución a los goals restantes
-            apply_substitution(RestGoals, NewSubst, SubstRestGoals),
-            apply_substitution(RenamedBody, NewSubst, SubstBody),
+            % Intentar unificar el goal sustituido con la cabeza de la cláusula
+            % unify/3 retorna SOLO las nuevas vinculaciones
+            unification:unify(SubstGoal, RenamedHead, ChildNewSubst),
+            
+            % Componer con la sustitución acumulada
+            unification:compose_substitutions(AccSubst, ChildNewSubst, ComposedSubst),
+            
+            % Aplicar sustitución compuesta a los goals restantes
+            unification:apply_substitution(RestGoals, ComposedSubst, SubstRestGoals),
+            unification:apply_substitution(RenamedBody, ComposedSubst, SubstBody),
             
             % Nueva lista de goals
             append(SubstBody, SubstRestGoals, NewGoals),
             
-            % Expandir recursivamente
+            % Expandir recursivamente con la sustitución compuesta
             NewDepth is Depth - 1,
-            expand_sld_tree(Program, NewGoals, NewSubst, RenamedClause, NewDepth, Child)
+            expand_sld_tree(Program, NewGoals, ComposedSubst, ChildNewSubst, RenamedClause, NewDepth, Child)
         ),
-        Children
+        ChildrenInfo
     ),
+    
+    % Extraer los nodos hijos
+    findall(Child, member(child_info(_, Child), ChildrenInfo), Children),
     
     % Determinar status del nodo
     (   Children = [] ->
         Status = failure
-    ;   member(node(_, _, _, success, _), Children) ->
+    ;   member(node(_, _, _, _, success, _), Children) ->
         Status = has_solution
     ;   Status = pending
     ),
     
-    Node = node([Goal|RestGoals], Subst, RuleApplied, Status, Children).
+    % Crear el nodo con la sustitución acumulada y la nueva
+    Node = node([Goal|RestGoals], AccSubst, NewSubst, RuleApplied, Status, Children).
 
 %% -----------------------------------------------------------------------------
 %% rename_variables(+Term, -RenamedTerm)
@@ -110,7 +124,7 @@ rename_clause(clause(Head, Body), clause(RenamedHead, RenamedBody)) :-
 %% -----------------------------------------------------------------------------
 
 % Contar nodos en el árbol
-count_nodes(node(_, _, _, _, Children), Count) :-
+count_nodes(node(_, _, _, _, _, Children), Count) :-
     count_nodes_list(Children, ChildCount),
     Count is 1 + ChildCount.
 
@@ -121,8 +135,8 @@ count_nodes_list([H|T], Count) :-
     Count is HCount + TCount.
 
 % Obtener todas las soluciones (nodos de éxito)
-find_all_solutions(node(_, Subst, _, success, _), [Subst]).
-find_all_solutions(node(_, _, _, _, Children), Solutions) :-
+find_all_solutions(node(_, Subst, _, _, success, _), [Subst]).
+find_all_solutions(node(_, _, _, _, _, Children), Solutions) :-
     find_all_solutions_list(Children, Solutions).
 
 find_all_solutions_list([], []).
@@ -132,8 +146,8 @@ find_all_solutions_list([H|T], Solutions) :-
     append(HSolutions, TSolutions, Solutions).
 
 % Obtener profundidad máxima del árbol
-tree_depth(node(_, _, _, _, []), 1).
-tree_depth(node(_, _, _, _, Children), Depth) :-
+tree_depth(node(_, _, _, _, _, []), 1).
+tree_depth(node(_, _, _, _, _, Children), Depth) :-
     Children \= [],
     max_depth_list(Children, ChildMaxDepth),
     Depth is 1 + ChildMaxDepth.

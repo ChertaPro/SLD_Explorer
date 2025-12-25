@@ -1,12 +1,15 @@
 %% =============================================================================
 %% MÓDULO: tree_export.pl
-%% Descripción: Exportación del árbol SLD a JSON para visualización web
+%% Descripción: Exportación del árbol SLD a JSON (ACTUALIZADO)
 %% =============================================================================
 
 :- module(tree_export, [
     tree_to_json/2,
     export_tree_file/2,
-    tree_to_json_string/2
+    tree_to_json_string/2,
+    goals_to_string/2,
+    subst_to_string/2,
+    rule_to_string/2
 ]).
 
 :- use_module(library(http/json)).
@@ -14,14 +17,18 @@
 %% -----------------------------------------------------------------------------
 %% tree_to_json(+Tree, -JSON)
 %% Convierte el árbol SLD a estructura JSON
+%% ACTUALIZADO: Ahora node tiene 6 campos
 %% -----------------------------------------------------------------------------
 
-tree_to_json(node(Goals, Subst, RuleApplied, Status, Children), JSON) :-
+tree_to_json(node(Goals, AccSubst, NewSubst, RuleApplied, Status, Children), JSON) :-
     % Convertir goals a string
     goals_to_string(Goals, GoalsStr),
     
-    % Convertir sustitución a string
-    subst_to_string(Subst, SubstStr),
+    % Convertir sustitución acumulada a string
+    subst_to_string(AccSubst, AccSubstStr),
+    
+    % Convertir sustitución nueva a string
+    subst_to_string(NewSubst, NewSubstStr),
     
     % Convertir regla aplicada a string
     rule_to_string(RuleApplied, RuleStr),
@@ -30,12 +37,13 @@ tree_to_json(node(Goals, Subst, RuleApplied, Status, Children), JSON) :-
     children_to_json(Children, ChildrenJSON),
     
     % Generar ID único para el nodo
-    term_hash(node(Goals, Subst), NodeID),
+    term_hash(node(Goals, AccSubst, NewSubst), NodeID),
     
     JSON = json([
         id = NodeID,
         goals = GoalsStr,
-        substitution = SubstStr,
+        accumulated_substitution = AccSubstStr,
+        new_substitution = NewSubstStr,
         rule = RuleStr,
         status = Status,
         children = ChildrenJSON
@@ -101,11 +109,12 @@ export_tree_file(Tree, Filename) :-
 %% Formato alternativo: Simple para debugging
 %% -----------------------------------------------------------------------------
 
-tree_to_simple_json(node(Goals, Subst, RuleApplied, Status, Children), JSON) :-
+tree_to_simple_json(node(Goals, AccSubst, NewSubst, RuleApplied, Status, Children), JSON) :-
     length(Children, NumChildren),
     JSON = json([
         goals = Goals,
-        substitution = Subst,
+        accumulated_subst = AccSubst,
+        new_subst = NewSubst,
         rule = RuleApplied,
         status = Status,
         num_children = NumChildren
@@ -113,6 +122,7 @@ tree_to_simple_json(node(Goals, Subst, RuleApplied, Status, Children), JSON) :-
 
 %% -----------------------------------------------------------------------------
 %% Exportación a formato Graphviz DOT (para visualización alternativa)
+%% ACTUALIZADO para nueva estructura
 %% -----------------------------------------------------------------------------
 
 tree_to_dot(Tree, DotString) :-
@@ -125,13 +135,14 @@ tree_to_dot_output(Tree) :-
     tree_to_dot_nodes(Tree, 0, _),
     format('}~n').
 
-tree_to_dot_nodes(node(Goals, Subst, _, Status, Children), ID, NextID) :-
+tree_to_dot_nodes(node(Goals, AccSubst, NewSubst, _, Status, Children), ID, NextID) :-
     % Crear nodo
     goals_to_string(Goals, GoalsStr),
-    subst_to_string(Subst, SubstStr),
+    subst_to_string(AccSubst, AccSubstStr),
+    subst_to_string(NewSubst, NewSubstStr),
     status_to_color(Status, Color),
-    format('    node~w [label="~w\\n~w", fillcolor=~w, style=filled];~n', 
-           [ID, GoalsStr, SubstStr, Color]),
+    format('    node~w [label="~w\\nAcc: ~w\\nNew: ~w", fillcolor=~w, style=filled];~n', 
+           [ID, GoalsStr, AccSubstStr, NewSubstStr, Color]),
     
     % Crear nodos hijos y conexiones
     ChildID is ID + 1,

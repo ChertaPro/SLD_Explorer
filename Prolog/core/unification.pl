@@ -5,6 +5,7 @@
 
 :- module(unification, [
     unify/3,
+    unify/4,
     apply_substitution/3,
     compose_substitutions/3,
     occurs_check/2
@@ -19,15 +20,30 @@
 unify(Term1, Term2, Subst) :-
     unify(Term1, Term2, [], Subst).
 
+%% -----------------------------------------------------------------------------
+%% unify(+Term1, +Term2, +SubstIn, -SubstOut)
+%% Unifica dos términos dados una sustitución de entrada
+%% -----------------------------------------------------------------------------
+
 % Caso base: ambos términos son idénticos
 unify(X, X, Subst, Subst) :- !.
 
 % Variables
 unify(X, Y, SubstIn, SubstOut) :-
     var(X), !,
-    (   occurs_check(X, Y) ->
-        fail  % Occurs check fallido
-    ;   SubstOut = [X=Y|SubstIn]
+    % Verificar si X ya tiene una vinculación en SubstIn
+    (   member(X=Value, SubstIn) ->
+        % X ya está vinculada, unificar su valor con Y
+        unify(Value, Y, SubstIn, SubstOut)
+    ;   % X no está vinculada
+        (   occurs_check(X, Y) ->
+            fail  % Occurs check fallido
+        ;   var(Y), member(Y=YValue, SubstIn) ->
+            % Y está vinculada, vincular X con el valor de Y
+            SubstOut = [X=YValue|SubstIn]
+        ;   % Agregar nueva vinculación
+            SubstOut = [X=Y|SubstIn]
+        )
     ).
 
 unify(X, Y, SubstIn, SubstOut) :-
@@ -52,11 +68,12 @@ unify([H1|T1], [H2|T2], SubstIn, SubstOut) :- !,
 unify([], [], Subst, Subst) :- !.
 
 % Átomos y números
-unify(X, Y, _, _) :-
+unify(X, Y, Subst, Subst) :-
     atomic(X),
     atomic(Y),
-    X \= Y, !,
-    fail.
+    X = Y, !.
+
+unify(_, _, _, _) :- fail.
 
 %% -----------------------------------------------------------------------------
 %% unify_list(+List1, +List2, +SubstIn, -SubstOut)
@@ -124,13 +141,26 @@ apply_substitution_list([H|T], Subst, [RH|RT]) :-
 %% -----------------------------------------------------------------------------
 %% compose_substitutions(+Subst1, +Subst2, -Result)
 %% Compone dos sustituciones: Result = Subst2 ∘ Subst1
+%% Primero aplica Subst2 a los valores de Subst1, luego añade Subst2
 %% -----------------------------------------------------------------------------
 
 compose_substitutions(Subst1, Subst2, Result) :-
-    apply_substitution_to_subst(Subst1, Subst2, TempSubst),
-    append(TempSubst, Subst2, Result).
+    % Aplicar Subst2 a todos los valores en Subst1
+    apply_substitution_to_subst(Subst1, Subst2, UpdatedSubst1),
+    % Agregar las nuevas vinculaciones de Subst2
+    merge_substitutions(UpdatedSubst1, Subst2, Result).
 
 apply_substitution_to_subst([], _, []).
 apply_substitution_to_subst([Var=Val|Rest], Subst2, [Var=NewVal|RestResult]) :-
     apply_substitution(Val, Subst2, NewVal),
     apply_substitution_to_subst(Rest, Subst2, RestResult).
+
+%% merge_substitutions(+Subst1, +Subst2, -Result)
+%% Une dos sustituciones, evitando duplicados
+merge_substitutions(Subst1, [], Subst1) :- !.
+merge_substitutions(Subst1, [Var=Val|Rest], Result) :-
+    % Si Var ya está en Subst1, no la agregamos de nuevo
+    (   member(Var=_, Subst1) ->
+        merge_substitutions(Subst1, Rest, Result)
+    ;   merge_substitutions([Var=Val|Subst1], Rest, Result)
+    ).

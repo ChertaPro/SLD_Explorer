@@ -1,36 +1,31 @@
 %% =============================================================================
 %% MÓDULO: main.pl
-%% Descripción: Punto de entrada principal del SLD Explorer
+%% Descripción: Punto de entrada principal del SLD Explorer (ACTUALIZADO)
 %% =============================================================================
 
-:- use_module(unification).
-:- use_module(sld_engine).
-:- use_module(tree_export).
+%% Cargar módulos usando rutas relativas
+:- ['core/unification.pl'].
+:- ['core/sld_engine.pl'].
+:- ['tree/tree_export.pl'].
 
 %% -----------------------------------------------------------------------------
 %% API Principal
 %% -----------------------------------------------------------------------------
 
-%% explore_query(+ProgramFile, +Query)
-%% Carga un programa y explora una consulta
 explore_query(ProgramFile, Query) :-
     load_program(ProgramFile, Program),
     format('~n=== SLD Explorer ===~n'),
     format('Program: ~w~n', [ProgramFile]),
     format('Query: ~w~n~n', [Query]),
     
-    sld_resolution(Program, Query, Tree),
+    sld_engine:sld_resolution(Program, Query, Tree),
     
-    % Mostrar estadísticas
     print_tree_stats(Tree),
     
-    % Exportar a JSON
     atom_concat(ProgramFile, '.json', JSONFile),
-    export_tree_file(Tree, JSONFile),
+    tree_export:export_tree_file(Tree, JSONFile),
     format('~nTree exported to: ~w~n', [JSONFile]).
 
-%% explore_query_interactive
-%% Modo interactivo
 explore_query_interactive :-
     format('~n=== SLD Explorer - Interactive Mode ===~n'),
     format('Enter program file: '),
@@ -57,7 +52,6 @@ read_clauses(Clauses) :-
         read_clauses(Rest)
     ).
 
-% Convierte cláusulas Prolog estándar a representación interna
 convert_to_internal([], []).
 convert_to_internal([Clause|Rest], [Internal|RestInternal]) :-
     clause_to_internal(Clause, Internal),
@@ -72,13 +66,13 @@ body_to_list((A, B), [A|Rest]) :- !,
 body_to_list(A, [A]).
 
 %% -----------------------------------------------------------------------------
-%% Utilidades de visualización
+%% Utilidades de visualización (ACTUALIZADAS)
 %% -----------------------------------------------------------------------------
 
 print_tree_stats(Tree) :-
-    count_nodes(Tree, NumNodes),
-    tree_depth(Tree, Depth),
-    find_all_solutions(Tree, Solutions),
+    sld_engine:count_nodes(Tree, NumNodes),
+    sld_engine:tree_depth(Tree, Depth),
+    sld_engine:find_all_solutions(Tree, Solutions),
     length(Solutions, NumSolutions),
     
     format('=== Tree Statistics ===~n'),
@@ -91,21 +85,23 @@ print_tree_stats(Tree) :-
 print_solutions([], _).
 print_solutions([Subst|Rest], N) :-
     format('Solution ~w: ', [N]),
-    subst_to_string(Subst, SubstStr),
+    tree_export:subst_to_string(Subst, SubstStr),
     format('~w~n', [SubstStr]),
     N1 is N + 1,
     print_solutions(Rest, N1).
 
+% ACTUALIZADO: Ahora el nodo tiene 6 campos (Goals, AccSubst, NewSubst, Rule, Status, Children)
 print_tree(Tree) :-
     print_tree(Tree, 0).
 
-print_tree(node(Goals, Subst, Rule, Status, Children), Indent) :-
+print_tree(node(Goals, AccSubst, NewSubst, Rule, Status, Children), Indent) :-
     indent(Indent),
-    goals_to_string(Goals, GoalsStr),
-    subst_to_string(Subst, SubstStr),
-    rule_to_string(Rule, RuleStr),
-    format('[~w] Goals: ~w | Subst: ~w | Rule: ~w~n', 
-           [Status, GoalsStr, SubstStr, RuleStr]),
+    tree_export:goals_to_string(Goals, GoalsStr),
+    tree_export:subst_to_string(AccSubst, AccSubstStr),
+    tree_export:subst_to_string(NewSubst, NewSubstStr),
+    tree_export:rule_to_string(Rule, RuleStr),
+    format('[~w] Goals: ~w | AccSubst: ~w | NewSubst: ~w | Rule: ~w~n', 
+           [Status, GoalsStr, AccSubstStr, NewSubstStr, RuleStr]),
     Indent1 is Indent + 2,
     print_tree_children(Children, Indent1).
 
@@ -125,7 +121,6 @@ indent(N) :-
 %% EJEMPLOS DE USO
 %% =============================================================================
 
-%% Ejemplo 1: Programa simple de familia
 example_family :-
     Program = [
         clause(parent(tom, bob), []),
@@ -138,12 +133,11 @@ example_family :-
     Query = [grandparent(tom, W)],
     
     format('~n=== Example: Family Relations ===~n'),
-    sld_resolution(Program, Query, Tree),
+    sld_engine:sld_resolution(Program, Query, Tree),
     print_tree_stats(Tree),
     format('~n=== Tree Structure ===~n'),
     print_tree(Tree).
 
-%% Ejemplo 2: Listas - member/2
 example_member :-
     Program = [
         clause(member(X, [X|_]), []),
@@ -152,12 +146,11 @@ example_member :-
     Query = [member(2, [1, 2, 3])],
     
     format('~n=== Example: Member ===~n'),
-    sld_resolution(Program, Query, Tree),
+    sld_engine:sld_resolution(Program, Query, Tree),
     print_tree_stats(Tree),
     format('~n=== Tree Structure ===~n'),
     print_tree(Tree).
 
-%% Ejemplo 3: Append
 example_append :-
     Program = [
         clause(append([], L, L), []),
@@ -166,12 +159,11 @@ example_append :-
     Query = [append([1, 2], [3, 4], Z)],
     
     format('~n=== Example: Append ===~n'),
-    sld_resolution(Program, Query, Tree),
+    sld_engine:sld_resolution(Program, Query, Tree),
     print_tree_stats(Tree),
     format('~n=== Tree Structure ===~n'),
     print_tree(Tree).
 
-%% Ejemplo 4: Backtracking
 example_backtracking :-
     Program = [
         clause(color(red), []),
@@ -184,12 +176,11 @@ example_backtracking :-
     Query = [match(alice, Color)],
     
     format('~n=== Example: Backtracking ===~n'),
-    sld_resolution(Program, Query, Tree),
+    sld_engine:sld_resolution(Program, Query, Tree),
     print_tree_stats(Tree),
     format('~n=== Tree Structure ===~n'),
     print_tree(Tree).
 
-%% Ejemplo 5: Fallo (no hay solución)
 example_failure :-
     Program = [
         clause(p(a), []),
@@ -198,12 +189,11 @@ example_failure :-
     Query = [p(X), q(X)],
     
     format('~n=== Example: Failure (No Solution) ===~n'),
-    sld_resolution(Program, Query, Tree),
+    sld_engine:sld_resolution(Program, Query, Tree),
     print_tree_stats(Tree),
     format('~n=== Tree Structure ===~n'),
     print_tree(Tree).
 
-%% Ejecutar todos los ejemplos
 run_examples :-
     example_family,
     format('~n~n'),
@@ -219,7 +209,7 @@ run_examples :-
 %% COMANDOS RÁPIDOS
 %% =============================================================================
 
-:- format('~n=== SLD Explorer Loaded ===~n').
+:- format('~n=== SLD Explorer Loaded (FIXED VERSION) ===~n').
 :- format('Quick commands:~n').
 :- format('  run_examples.           - Run all built-in examples~n').
 :- format('  example_family.         - Family relations example~n').
