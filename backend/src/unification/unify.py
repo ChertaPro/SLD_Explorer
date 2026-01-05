@@ -106,7 +106,7 @@ def unify(term1: Term, term2: Term, subst: Optional[Substitution] = None) -> Sub
         
         # Caso 2: Compuestos
         unify(Compound("f", (Variable("X"), Atom("a"))),
-              Compound("f", (Atom("b"), Atom("a"))))
+                Compound("f", (Atom("b"), Atom("a"))))
         -> {X ↦ b}
         
         # Caso 3: Fallo
