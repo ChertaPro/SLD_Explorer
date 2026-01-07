@@ -1,12 +1,10 @@
 """
-parser.py - Parser de Prolog Simplificado
+parser.py - Parser de Prolog Recursivo Descendente
 
-Parser recursivo descendente para un subconjunto de Prolog:
-- Hechos: padre(juan, maria).
-- Reglas: abuelo(X, Z) :- padre(X, Y), padre(Y, Z).
-- Consultas: ?- padre(X, maria).
-- Listas: [1,2,3], [H|T]
-- Números y átomos
+Responsabilidades:
+- Análisis sintáctico de tokens
+- Construcción del AST
+- Validación de gramática
 
 Gramática (simplificada):
     program    ::= clause*
@@ -22,135 +20,55 @@ Gramática (simplificada):
     list_items ::= term (',' term)* ('|' term)?
 """
 
-import re
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional
 from dataclasses import dataclass
+
+from .lexer import Token, Lexer
 from .terms import (
     Term, Variable, Atom, Number, Compound, 
-    List as ListTerm, Substitution
+    List as ListTerm
 )
 
 
 # ============================================================================
-# TOKENIZACIÓN
-# ============================================================================
-
-@dataclass
-class Token:
-    """Representa un token del lexer"""
-    type: str  # ATOM, VAR, NUMBER, LPAREN, etc.
-    value: str
-    line: int
-    column: int
-
-
-class Lexer:
-    """
-    Tokenizador para Prolog.
-    
-    Tipos de tokens:
-    - ATOM: juan, padre, rojo
-    - VAR: X, Y, _result
-    - NUMBER: 42, 3.14
-    - LPAREN, RPAREN: (, )
-    - LBRACKET, RBRACKET: [, ]
-    - DOT: .
-    - COMMA: ,
-    - PIPE: |
-    - IMPLIES: :-
-    - QUERY: ?-
-    """
-    
-    TOKEN_PATTERNS = [
-        ('QUERY', r'\?-'),
-        ('IMPLIES', r':-'),
-        ('NUMBER', r'-?\d+\.?\d*'),
-        ('VAR', r'[A-Z_][a-zA-Z0-9_]*'),
-        ('ATOM', r'[a-z][a-zA-Z0-9_]*'),
-        ('QUOTED_ATOM', r"'([^'\\\\]|\\\\.)*'"),
-        ('LPAREN', r'\('),
-        ('RPAREN', r'\)'),
-        ('LBRACKET', r'\['),
-        ('RBRACKET', r'\]'),
-        ('DOT', r'\.'),
-        ('COMMA', r','),
-        ('PIPE', r'\|'),
-        ('WHITESPACE', r'\s+'),
-        ('COMMENT', r'%.*'),
-    ]
-    
-    def __init__(self, text: str):
-        self.text = text
-        self.pos = 0
-        self.line = 1
-        self.column = 1
-        self.tokens: List[Token] = []
-    
-    def tokenize(self) -> List[Token]:
-        """Tokeniza el texto completo"""
-        while self.pos < len(self.text):
-            match_found = False
-            
-            for token_type, pattern in self.TOKEN_PATTERNS:
-                regex = re.compile(pattern)
-                match = regex.match(self.text, self.pos)
-                
-                if match:
-                    value = match.group(0)
-                    
-                    # Ignorar whitespace y comentarios
-                    if token_type not in ('WHITESPACE', 'COMMENT'):
-                        # Limpiar comillas de átomos
-                        if token_type == 'QUOTED_ATOM':
-                            value = value[1:-1]  # Remover comillas
-                            token_type = 'ATOM'
-                        
-                        self.tokens.append(Token(
-                            token_type, value, self.line, self.column
-                        ))
-                    
-                    # Actualizar posición
-                    self.pos = match.end()
-                    
-                    # Actualizar línea y columna
-                    newlines = value.count('\n')
-                    if newlines:
-                        self.line += newlines
-                        self.column = len(value.split('\n')[-1]) + 1
-                    else:
-                        self.column += len(value)
-                    
-                    match_found = True
-                    break
-            
-            if not match_found:
-                raise SyntaxError(
-                    f"Invalid character '{self.text[self.pos]}' "
-                    f"at line {self.line}, column {self.column}"
-                )
-        
-        return self.tokens
-
-
-# ============================================================================
-# PARSER
+# EXCEPCIONES
 # ============================================================================
 
 class ParseError(Exception):
     """Excepción para errores de parsing"""
-    pass
+    
+    def __init__(self, message: str, token: Optional[Token] = None):
+        if token:
+            super().__init__(
+                f"{message} at line {token.line}, column {token.column}"
+            )
+        else:
+            super().__init__(message)
+        self.token = token
 
+
+# ============================================================================
+# AST NODES
+# ============================================================================
 
 @dataclass
 class Clause:
-    """Representa una cláusula Prolog (hecho o regla)"""
+    """
+    Representa una cláusula Prolog (hecho o regla).
+    
+    Examples:
+        padre(juan, maria).              -> Clause(head=..., body=None)
+        abuelo(X, Z) :- padre(X, Y), ... -> Clause(head=..., body=[...])
+    """
     head: Compound
     body: Optional[List[Compound]] = None
     
     def is_fact(self) -> bool:
+        """Verifica si es un hecho (sin cuerpo)"""
         return self.body is None
     
     def is_rule(self) -> bool:
+        """Verifica si es una regla (con cuerpo)"""
         return self.body is not None
     
     def __str__(self) -> str:
@@ -162,7 +80,12 @@ class Clause:
 
 @dataclass
 class Query:
-    """Representa una consulta Prolog"""
+    """
+    Representa una consulta Prolog.
+    
+    Example:
+        ?- padre(X, maria).  -> Query(goals=[padre(X, maria)])
+    """
     goals: List[Compound]
     
     def __str__(self) -> str:
@@ -172,21 +95,60 @@ class Query:
 
 @dataclass
 class Program:
-    """Representa un programa Prolog completo"""
+    """
+    Representa un programa Prolog completo.
+    
+    Example:
+        padre(juan, maria).
+        abuelo(X, Z) :- ...
+        -> Program(clauses=[...])
+    """
     clauses: List[Clause]
     
     def __str__(self) -> str:
         return "\n".join(str(c) for c in self.clauses)
+    
+    def get_clauses_for_predicate(self, functor: str, arity: int) -> List[Clause]:
+        """
+        Retorna todas las cláusulas para un predicado específico.
+        
+        Args:
+            functor: Nombre del predicado
+            arity: Aridad del predicado
+        
+        Returns:
+            Lista de cláusulas que coinciden
+        """
+        return [
+            clause for clause in self.clauses
+            if clause.head.functor == functor and clause.head.arity == arity
+        ]
 
+
+# ============================================================================
+# PARSER
+# ============================================================================
 
 class Parser:
     """
     Parser recursivo descendente para Prolog.
+    
+    Construye el AST a partir de una lista de tokens.
     """
     
     def __init__(self, tokens: List[Token]):
+        """
+        Inicializa el parser.
+        
+        Args:
+            tokens: Lista de tokens del lexer
+        """
         self.tokens = tokens
         self.pos = 0
+    
+    # ========================================================================
+    # NAVEGACIÓN DE TOKENS
+    # ========================================================================
     
     def current_token(self) -> Optional[Token]:
         """Retorna el token actual sin consumirlo"""
@@ -194,21 +156,55 @@ class Parser:
             return self.tokens[self.pos]
         return None
     
+    def peek_ahead(self, steps: int = 1) -> Optional[Token]:
+        """
+        Mira adelante N tokens sin consumir.
+        
+        Args:
+            steps: Cuántos tokens adelante mirar
+        
+        Returns:
+            Token en esa posición o None
+        """
+        pos = self.pos + steps
+        if pos < len(self.tokens):
+            return self.tokens[pos]
+        return None
+    
     def consume(self, expected_type: str) -> Token:
-        """Consume un token del tipo esperado"""
+        """
+        Consume un token del tipo esperado.
+        
+        Args:
+            expected_type: Tipo de token esperado
+        
+        Returns:
+            Token consumido
+        
+        Raises:
+            ParseError: Si el token no es del tipo esperado
+        """
         token = self.current_token()
         if token is None:
             raise ParseError(f"Unexpected end of input, expected {expected_type}")
         if token.type != expected_type:
             raise ParseError(
-                f"Expected {expected_type}, got {token.type} '{token.value}' "
-                f"at line {token.line}, column {token.column}"
+                f"Expected {expected_type}, got {token.type} '{token.value}'",
+                token
             )
         self.pos += 1
         return token
     
     def peek(self, token_type: str) -> bool:
-        """Verifica si el token actual es del tipo dado"""
+        """
+        Verifica si el token actual es del tipo dado.
+        
+        Args:
+            token_type: Tipo a verificar
+        
+        Returns:
+            True si coincide, False en caso contrario
+        """
         token = self.current_token()
         return token is not None and token.type == token_type
     
@@ -218,12 +214,20 @@ class Parser:
     
     def parse_term(self) -> Term:
         """
+        Parsea un término Prolog.
+        
         term ::= atom | variable | number | compound | list
+        
+        Returns:
+            Término parseado
+        
+        Raises:
+            ParseError: Si el token no corresponde a ningún término válido
         """
         token = self.current_token()
         
         if token is None:
-            raise ParseError("Unexpected end of input")
+            raise ParseError("Unexpected end of input while parsing term")
         
         # Variable
         if token.type == 'VAR':
@@ -252,12 +256,20 @@ class Parser:
             # Solo átomo
             return Atom(atom_token.value)
         
-        raise ParseError(f"Unexpected token {token.type} '{token.value}'")
+        raise ParseError(f"Unexpected token {token.type} '{token.value}'", token)
     
     def parse_compound(self, functor: str) -> Compound:
         """
+        Parsea un término compuesto.
+        
         compound ::= atom '(' args ')'
         args     ::= term (',' term)*
+        
+        Args:
+            functor: Nombre del functor (ya consumido)
+        
+        Returns:
+            Compound term
         """
         self.consume('LPAREN')
         
@@ -275,8 +287,13 @@ class Parser:
     
     def parse_list(self) -> Term:
         """
+        Parsea una lista Prolog.
+        
         list       ::= '[' ']' | '[' list_items ']'
         list_items ::= term (',' term)* ('|' term)?
+        
+        Returns:
+            Term representando la lista
         """
         self.consume('LBRACKET')
         
@@ -305,19 +322,29 @@ class Parser:
         return ListTerm(tuple(elements), tail).to_compound()
     
     # ========================================================================
-    # PARSING DE CLÁUSULAS
+    # PARSING DE CLÁUSULAS Y PROGRAMAS
     # ========================================================================
     
     def parse_clause(self) -> Clause:
         """
+        Parsea una cláusula (hecho o regla).
+        
         clause ::= fact | rule
         fact   ::= term '.'
         rule   ::= term ':-' body '.'
+        
+        Returns:
+            Clause
+        
+        Raises:
+            ParseError: Si la cabeza no es un Compound
         """
         head = self.parse_term()
         
         if not isinstance(head, Compound):
-            raise ParseError(f"Clause head must be compound, got {type(head)}")
+            raise ParseError(
+                f"Clause head must be compound, got {type(head).__name__}"
+            )
         
         # Regla
         if self.peek('IMPLIES'):
@@ -332,27 +359,45 @@ class Parser:
     
     def parse_body(self) -> List[Compound]:
         """
+        Parsea el cuerpo de una regla.
+        
         body ::= goal (',' goal)*
         goal ::= term
+        
+        Returns:
+            Lista de goals
+        
+        Raises:
+            ParseError: Si un goal no es Compound
         """
         goals = []
-        goals.append(self.parse_term())
+        goal = self.parse_term()
         
-        if not isinstance(goals[0], Compound):
-            raise ParseError(f"Goal must be compound, got {type(goals[0])}")
+        if not isinstance(goal, Compound):
+            raise ParseError(
+                f"Goal must be compound, got {type(goal).__name__}"
+            )
+        goals.append(goal)
         
         while self.peek('COMMA'):
             self.consume('COMMA')
             goal = self.parse_term()
             if not isinstance(goal, Compound):
-                raise ParseError(f"Goal must be compound, got {type(goal)}")
+                raise ParseError(
+                    f"Goal must be compound, got {type(goal).__name__}"
+                )
             goals.append(goal)
         
         return goals
     
     def parse_query(self) -> Query:
         """
+        Parsea una consulta.
+        
         query ::= '?-' body '.'
+        
+        Returns:
+            Query
         """
         self.consume('QUERY')
         goals = self.parse_body()
@@ -361,7 +406,12 @@ class Parser:
     
     def parse_program(self) -> Program:
         """
+        Parsea un programa completo.
+        
         program ::= clause*
+        
+        Returns:
+            Program
         """
         clauses = []
         
@@ -390,12 +440,14 @@ def parse(text: str) -> Program:
     Returns:
         Programa parseado
     
-    Ejemplo:
-        program = parse('''
-            padre(juan, maria).
-            padre(juan, pedro).
-            abuelo(X, Z) :- padre(X, Y), padre(Y, Z).
-        ''')
+    Example:
+        >>> program = parse('''
+        ...     padre(juan, maria).
+        ...     padre(juan, pedro).
+        ...     abuelo(X, Z) :- padre(X, Y), padre(Y, Z).
+        ... ''')
+        >>> print(len(program.clauses))
+        3
     """
     lexer = Lexer(text)
     tokens = lexer.tokenize()
@@ -413,8 +465,10 @@ def parse_query(text: str) -> Query:
     Returns:
         Query parseada
     
-    Ejemplo:
-        query = parse_query("?- padre(X, maria).")
+    Example:
+        >>> query = parse_query("?- padre(X, maria).")
+        >>> print(query.goals[0])
+        padre(X, maria)
     """
     lexer = Lexer(text)
     tokens = lexer.tokenize()
@@ -437,21 +491,30 @@ def test_parser():
     print("\n1. Hechos simples:")
     prog = parse("padre(juan, maria). madre(ana, maria).")
     print(prog)
+    assert len(prog.clauses) == 2
+    print("   ✓ 2 cláusulas parseadas")
     
     # Test 2: Regla simple
     print("\n2. Regla simple:")
     prog = parse("abuelo(X, Z) :- padre(X, Y), padre(Y, Z).")
     print(prog)
+    assert len(prog.clauses) == 1
+    assert prog.clauses[0].is_rule()
+    print("   ✓ Regla parseada correctamente")
     
     # Test 3: Listas
     print("\n3. Listas:")
     prog = parse("lista([1, 2, 3]). cons([H|T]).")
     print(prog)
+    assert len(prog.clauses) == 2
+    print("   ✓ Listas parseadas")
     
     # Test 4: Consulta
     print("\n4. Consulta:")
     query = parse_query("?- padre(X, maria).")
     print(query)
+    assert len(query.goals) == 1
+    print("   ✓ Consulta parseada")
     
     # Test 5: Programa completo
     print("\n5. Programa completo:")
@@ -465,8 +528,19 @@ def test_parser():
     """
     prog = parse(code)
     print(prog)
+    assert len(prog.clauses) == 3
+    print("   ✓ Programa completo parseado")
+    
+    # Test 6: Error de sintaxis
+    print("\n6. Error de sintaxis:")
+    try:
+        parse("padre(juan")
+    except ParseError as e:
+        print(f"   ✓ Error capturado: {e}")
     
     print("\n" + "=" * 60)
+    print("TODOS LOS TESTS PASARON ✓")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

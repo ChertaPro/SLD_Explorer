@@ -1,4 +1,6 @@
-"""Parser module - Term parsing and representation."""
+"""Parser module - Lexer, Parser, and Term representation."""
+
+# Terms
 from .terms import (
     Term,
     Variable,
@@ -8,9 +10,17 @@ from .terms import (
     List,
     Substitution,
 )
-from .parser import (
+
+# Lexer
+from .lexer import (
     Token,
     Lexer,
+    LexerError,
+    tokenize,
+)
+
+# Parser
+from .parser import (
     ParseError,
     Clause,
     Query,
@@ -21,6 +31,7 @@ from .parser import (
 )
 
 __all__ = [
+    # Terms
     "Term",
     "Variable",
     "Atom",
@@ -28,8 +39,12 @@ __all__ = [
     "Compound",
     "List",
     "Substitution",
+    # Lexer
     "Token",
     "Lexer",
+    "LexerError",
+    "tokenize",
+    # Parser
     "ParseError",
     "Clause",
     "Query",
