@@ -13,7 +13,7 @@ Resolution Principle"
 """
 
 from typing import Optional, Tuple
-from parser.terms import (
+from ..parser.terms import (
     Term, Variable, Atom, Number, Compound, 
     List, Substitution
 )
@@ -253,7 +253,7 @@ def rename_variables(term: Term, suffix: str) -> Term:
 # ============================================================================
 
 def unify_verbose(term1: Term, term2: Term, 
-                  subst: Optional[Substitution] = None) -> Tuple[bool, Optional[Substitution]]:
+                    subst: Optional[Substitution] = None) -> Tuple[bool, Optional[Substitution]]:
     """
     Versión verbose de unify que no lanza excepciones.
     

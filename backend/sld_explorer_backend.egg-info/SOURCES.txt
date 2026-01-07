@@ -1,0 +1,16 @@
+pyproject.toml
+./src/__init__.py
+./src/main.py
+./src/api/__init__.py
+./src/parser/__init__.py
+./src/parser/parser.py
+./src/parser/terms.py
+./src/sld/__init__.py
+./src/sld/resolution.py
+./src/unification/__init__.py
+./src/unification/unify.py
+sld_explorer_backend.egg-info/PKG-INFO
+sld_explorer_backend.egg-info/SOURCES.txt
+sld_explorer_backend.egg-info/dependency_links.txt
+sld_explorer_backend.egg-info/requires.txt
+sld_explorer_backend.egg-info/top_level.txt

@@ -21,9 +21,9 @@ from typing import List, Optional, Tuple, Set
 from enum import Enum
 import uuid
 
-from parser.terms import Term, Variable, Compound, Substitution
-from unification.unify import unify, rename_variables, UnificationError
-from src.parser import Clause, Program
+from ..parser.terms import Term, Variable, Compound, Substitution  
+from ..parser import Clause, Program  
+from ..unification.unify import unify, rename_variables, UnificationError  
 
 
 # ============================================================================
@@ -389,7 +389,7 @@ class SLDResolver:
 
 def test_sld_resolution():
     """Tests del motor SLD"""
-    from src.parser import parse, parse_query
+    from ..parser import parse, parse_query  
     
     print("=" * 70)
     print("TESTS DE RESOLUCIÓN SLD")

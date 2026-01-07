@@ -15,10 +15,9 @@ from typing import List, Optional, Dict, Any
 import json
 import asyncio
 
-# Importar módulos del proyecto
-from .parser import parse, parse_query, ParseError, Program, Query
-from .resolution import SLDResolver, SLDTree
-from .terms import Compound
+from .parser import parse, parse_query, ParseError, Program, Query, Clause
+from .sld import SLDResolver, SLDTree, SLDNode
+from .parser.terms import Compound
 
 
 # ============================================================================
