@@ -186,12 +186,33 @@ class Parser:
         """
         token = self.current_token()
         if token is None:
-            raise ParseError(f"Unexpected end of input, expected {expected_type}")
+            # Cuando no hay más tokens, usar el último token como referencia
+            # Si no hay tokens en absoluto, usar una ubicación por defecto
+            if self.tokens:
+                last_token = self.tokens[-1]
+                # Crear un token ficticio después del último token
+                fake_token = Token(
+                    type='EOF', 
+                    value='', 
+                    line=last_token.line,
+                    column=last_token.column + len(last_token.value)
+                )
+                raise ParseError(
+                    f"Unexpected end of input, expected {expected_type}",
+                    fake_token
+                )
+            else:
+                raise ParseError(
+                    f"Unexpected end of input, expected {expected_type}",
+                    Token(type='EOF', value='', line=1, column=1)
+                )
+        
         if token.type != expected_type:
             raise ParseError(
                 f"Expected {expected_type}, got {token.type} '{token.value}'",
                 token
             )
+        
         self.pos += 1
         return token
     
