@@ -283,17 +283,22 @@ class Substitution(dict):
         Composición de sustituciones θ₁ ∘ θ₂
         
         (θ₁ ∘ θ₂)(X) = θ₁(θ₂(X))
+        
+        Algoritmo:
+        1. Para cada variable en θ₂, aplicar θ₁ a su valor
+        2. Para cada variable en θ₁ que NO está en θ₂, aplicar θ₂ a su valor
         """
         result = Substitution()
         
-        # Aplicar θ₁ a los valores de θ₂
+        # Paso 1: Aplicar θ₁ a los valores de θ₂
         for var, term in other.items():
             result[var] = term.apply_substitution(self)
         
-        # Agregar bindings de θ₁ que no están en θ₂
+        # Paso 2: Agregar bindings de θ₁ que no están en θ₂
+        # IMPORTANTE: También aplicar θ₂ a estos términos
         for var, term in self.items():
             if var not in result:
-                result[var] = term
+                result[var] = term.apply_substitution(other)
         
         return result
     
