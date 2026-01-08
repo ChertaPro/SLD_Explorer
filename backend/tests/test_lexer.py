@@ -96,7 +96,7 @@ class TestWhitespaceAndComments:
         # Solo debe haber tokens de las dos cláusulas
         assert "%" not in [t.value for t in tokens]
         atom_tokens = [t for t in tokens if t.type == "ATOM"]
-        assert len(atom_tokens) == 4  # padre, juan, maria, madre, ana, maria = 6... wait
+        assert len(atom_tokens) == 6  # padre, juan, maria, madre, ana, maria = 6... wait
     
     def test_newlines_handled(self):
         """Saltos de línea deben manejarse correctamente"""

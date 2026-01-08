@@ -23,7 +23,7 @@ class ParseRequest(BaseModel):
         ...,
         description="Código Prolog a parsear",
         min_length=1,
-        example="padre(juan, maria)."
+        json_schema_extra={"example": "padre(juan, maria)."}
     )
     
     model_config = {
