@@ -1,25 +1,13 @@
 """
-resolution.py - Motor de Resolución SLD
+resolution.py - Motor de Resolución SLD (Versión Exhaustiva)
 
-Implementa el motor de resolución SLD (Selective Linear Definite clause resolution)
-que es la base de la ejecución de programas Prolog.
-
-SLD Resolution:
-1. Seleccionar un goal del conjunto de goals
-2. Buscar una cláusula que unifique con ese goal
-3. Si unifica, reemplazar el goal por el cuerpo de la cláusula
-4. Repetir hasta que no haya goals (éxito) o no haya cláusulas (fallo)
-
-El resultado es un árbol de búsqueda donde:
-- Nodos = estados de resolución (goals pendientes + sustitución)
-- Aristas = aplicación de una cláusula
-- Hojas = éxito (sin goals) o fallo (sin cláusulas aplicables)
+Modificado para explorar TODAS las posibilidades y generar árbol completo
+con renombramiento de variables por profundidad/rama.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Set
+from typing import List, Optional, Tuple
 from enum import Enum
-import uuid
 
 from ..parser.terms import Term, Variable, Compound, Substitution  
 from ..parser import Clause, Program  
@@ -32,84 +20,75 @@ from ..unification.unify import unify, rename_variables, UnificationError
 
 class NodeStatus(Enum):
     """Estado de un nodo en el árbol SLD"""
-    PENDING = "pending"      # Aún no explorado
-    SUCCESS = "success"      # Rama exitosa (sin goals)
-    FAILURE = "failure"      # No hay cláusulas aplicables
-    EXPANDED = "expanded"    # Ya expandido (nodo interno)
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILURE = "failure"
+    EXPANDED = "expanded"
 
 
 @dataclass
 class SLDNode:
-    """
-    Representa un nodo en el árbol de resolución SLD.
-    
-    Cada nodo contiene:
-    - goals: Lista de goals pendientes por resolver
-    - substitution: Sustitución acumulada hasta este punto
-    - parent: Nodo padre (None para la raíz)
-    - children: Lista de nodos hijos
-    - clause_used: Cláusula usada para llegar a este nodo
-    - status: Estado del nodo
-    - depth: Profundidad en el árbol
-    """
+    """Nodo del árbol SLD con información completa"""
     goals: List[Compound]
     substitution: Substitution
-    node_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    node_id: str = field(default_factory=lambda: _generate_node_id())
     parent: Optional['SLDNode'] = None
     children: List['SLDNode'] = field(default_factory=list)
     clause_used: Optional[Clause] = None
     selected_goal_index: int = 0
     status: NodeStatus = NodeStatus.PENDING
     depth: int = 0
+    branch_number: int = 0  # Número de rama en ese nivel
+    umg: str = ""  # Unificador Más General
+    src: str = ""  # Substitución Resultado Computado (solo en success)
     
     def is_success(self) -> bool:
-        """Un nodo es exitoso si no tiene goals pendientes"""
         return len(self.goals) == 0
     
     def is_failure(self) -> bool:
-        """Un nodo es fallido si tiene goals pero no puede expandirse"""
         return len(self.goals) > 0 and self.status == NodeStatus.FAILURE
     
     def selected_goal(self) -> Optional[Compound]:
-        """Retorna el goal seleccionado para resolución"""
         if 0 <= self.selected_goal_index < len(self.goals):
             return self.goals[self.selected_goal_index]
         return None
     
     def __str__(self) -> str:
         if len(self.goals) == 0:
-            return "□ (success)"
+            return f"□ (success) | SRC = {self.src}"
         goals_str = ", ".join(str(g) for g in self.goals)
-        subst_str = str(self.substitution) if self.substitution else "{}"
-        return f"Goals: [{goals_str}] | θ: {subst_str}"
+        return f"Goals: [{goals_str}] | UMG{self.depth} = {self.umg}"
     
     def to_dict(self) -> dict:
-        """Serializa el nodo a diccionario para JSON"""
         return {
             "id": self.node_id,
             "goals": [str(g) for g in self.goals],
             "substitution": str(self.substitution),
             "status": self.status.value,
             "depth": self.depth,
+            "branch_number": self.branch_number,
             "selected_goal_index": self.selected_goal_index,
             "selected_goal": str(self.selected_goal()) if self.selected_goal() else None,
             "clause_used": str(self.clause_used) if self.clause_used else None,
+            "umg": self.umg,
+            "src": self.src if self.is_success() else "",
             "children": [child.node_id for child in self.children],
             "parent": self.parent.node_id if self.parent else None
         }
 
 
+# Contador global para IDs de nodos
+_node_counter = 0
+
+def _generate_node_id():
+    global _node_counter
+    _node_counter += 1
+    return f"node_{_node_counter}"
+
+
 @dataclass
 class SLDTree:
-    """
-    Representa el árbol de resolución SLD completo.
-    
-    Attributes:
-        root: Nodo raíz del árbol
-        program: Programa Prolog usado
-        all_nodes: Lista de todos los nodos (para fácil acceso)
-        max_depth: Profundidad máxima permitida (prevenir loops infinitos)
-    """
+    """Árbol SLD completo"""
     root: SLDNode
     program: Program
     all_nodes: List[SLDNode] = field(default_factory=list)
@@ -119,12 +98,6 @@ class SLDTree:
         self.all_nodes.append(self.root)
     
     def find_solutions(self) -> List[Tuple[SLDNode, Substitution]]:
-        """
-        Encuentra todas las soluciones (nodos exitosos) en el árbol.
-        
-        Returns:
-            Lista de tuplas (nodo, sustitución) para cada solución
-        """
         solutions = []
         for node in self.all_nodes:
             if node.is_success():
@@ -132,7 +105,6 @@ class SLDTree:
         return solutions
     
     def to_dict(self) -> dict:
-        """Serializa el árbol completo a diccionario"""
         return {
             "root": self.root.node_id,
             "nodes": [node.to_dict() for node in self.all_nodes],
@@ -140,7 +112,8 @@ class SLDTree:
             "solutions": [
                 {
                     "node_id": node.node_id,
-                    "substitution": str(subst)
+                    "substitution": str(subst),
+                    "src": node.src
                 }
                 for node, subst in self.find_solutions()
             ]
@@ -148,85 +121,58 @@ class SLDTree:
 
 
 # ============================================================================
-# MOTOR DE RESOLUCIÓN SLD
+# MOTOR SLD EXHAUSTIVO
 # ============================================================================
 
 class SLDResolver:
-    """
-    Motor de resolución SLD que construye el árbol de búsqueda.
-    
-    Estrategias de selección de goals:
-    - leftmost: Siempre selecciona el primer goal (estrategia de Prolog)
-    - rightmost: Selecciona el último goal
-    """
+    """Motor SLD que explora TODAS las posibilidades"""
     
     def __init__(self, program: Program, max_depth: int = 20):
-        """
-        Inicializa el resolver.
-        
-        Args:
-            program: Programa Prolog a usar
-            max_depth: Profundidad máxima del árbol (prevenir loops)
-        """
         self.program = program
         self.max_depth = max_depth
-        self.clause_counter = 0  # Para renombrar variables
+        self.clause_usage_counter = {}  # Contador por (depth, branch)
     
-    def resolve(self, query_goals: List[Compound], 
-                strategy: str = "leftmost") -> SLDTree:
-        """
-        Ejecuta la resolución SLD para una consulta.
+    def resolve(self, query_goals: List[Compound], strategy: str = "leftmost") -> SLDTree:
+        """Resolución SLD exhaustiva"""
+        global _node_counter
+        _node_counter = 0
+        self.clause_usage_counter = {}
         
-        Args:
-            query_goals: Lista de goals de la consulta
-            strategy: Estrategia de selección ("leftmost" o "rightmost")
-        
-        Returns:
-            Árbol SLD completo
-        
-        Algoritmo:
-            1. Crear nodo raíz con los goals de la consulta
-            2. Expandir nodo actual:
-                a. Seleccionar un goal según estrategia
-                b. Buscar cláusulas que unifiquen con el goal
-                c. Para cada cláusula unificable, crear hijo
-            3. Repetir para cada nodo pending hasta max_depth
-        """
-        # Crear nodo raíz
+        # Nodo raíz
         root = SLDNode(
             goals=query_goals,
             substitution=Substitution(),
             depth=0,
+            branch_number=0,
             status=NodeStatus.PENDING
         )
         
-        # Crear árbol
         tree = SLDTree(root=root, program=self.program, max_depth=self.max_depth)
         
-        # Cola de nodos por expandir (BFS)
+        # BFS para explorar todo el árbol
         queue = [root]
         
         while queue:
             node = queue.pop(0)
             
-            # Verificar profundidad
+            # Límite de profundidad
             if node.depth >= self.max_depth:
                 node.status = NodeStatus.FAILURE
                 continue
             
-            # Si no hay goals, es éxito
+            # Éxito
             if node.is_success():
                 node.status = NodeStatus.SUCCESS
+                # Calcular SRC (variables originales de la consulta)
+                node.src = self._calculate_src(node.substitution, query_goals)
                 continue
             
-            # Expandir nodo
-            children = self._expand_node(node, strategy)
+            # Expandir nodo con TODAS las cláusulas aplicables
+            children = self._expand_node_exhaustive(node, strategy)
             
             if len(children) == 0:
-                # No hay cláusulas aplicables = fallo
                 node.status = NodeStatus.FAILURE
             else:
-                # Nodo expandido exitosamente
                 node.status = NodeStatus.EXPANDED
                 node.children = children
                 tree.all_nodes.extend(children)
@@ -234,24 +180,15 @@ class SLDResolver:
         
         return tree
     
-    def _expand_node(self, node: SLDNode, strategy: str) -> List[SLDNode]:
-        """
-        Expande un nodo aplicando todas las cláusulas posibles.
-        
-        Args:
-            node: Nodo a expandir
-            strategy: Estrategia de selección de goal
-        
-        Returns:
-            Lista de nodos hijos creados
-        """
-        # Seleccionar goal según estrategia
+    def _expand_node_exhaustive(self, node: SLDNode, strategy: str) -> List[SLDNode]:
+        """Expande un nodo probando TODAS las cláusulas del programa"""
+        # Seleccionar goal
         if strategy == "leftmost":
             goal_index = 0
         elif strategy == "rightmost":
             goal_index = len(node.goals) - 1
         else:
-            goal_index = 0  # Default leftmost
+            goal_index = 0
         
         if goal_index >= len(node.goals):
             return []
@@ -259,41 +196,33 @@ class SLDResolver:
         selected_goal = node.goals[goal_index]
         node.selected_goal_index = goal_index
         
-        # Buscar cláusulas aplicables
         children = []
+        branch_number = 1  # Contador de ramas en este nivel
         
+        # Probar CADA cláusula del programa
         for clause in self.program.clauses:
-            # Renombrar variables de la cláusula para evitar colisiones
-            self.clause_counter += 1
-            renamed_clause = self._rename_clause(clause, f"_{self.clause_counter}")
+            # Renombrar variables con formato: Var_profundidad_rama
+            suffix = f"_{node.depth + 1}{branch_number}"
+            renamed_clause = self._rename_clause(clause, suffix)
             
-            # Intentar unificar
             try:
-                # Unificar goal con head de la cláusula
-                new_subst = unify(
-                    selected_goal, 
-                    renamed_clause.head, 
-                    node.substitution
-                )
+                # Intentar unificar
+                new_subst = unify(selected_goal, renamed_clause.head, node.substitution)
                 
                 # Construir nuevos goals
                 new_goals = []
-                
-                # Agregar goals antes del seleccionado
                 new_goals.extend(node.goals[:goal_index])
                 
-                # Si la cláusula tiene body, agregar sus goals
                 if renamed_clause.body:
                     new_goals.extend(renamed_clause.body)
                 
-                # Agregar goals después del seleccionado
                 new_goals.extend(node.goals[goal_index + 1:])
                 
-                # Aplicar sustitución a todos los goals
-                new_goals = [
-                    g.apply_substitution(new_subst) 
-                    for g in new_goals
-                ]
+                # Aplicar sustitución
+                new_goals = [g.apply_substitution(new_subst) for g in new_goals]
+                
+                # Calcular UMG para este paso
+                umg = self._calculate_umg(node.substitution, new_subst)
                 
                 # Crear nodo hijo
                 child = SLDNode(
@@ -302,60 +231,79 @@ class SLDResolver:
                     parent=node,
                     clause_used=renamed_clause,
                     depth=node.depth + 1,
-                    status=NodeStatus.PENDING
+                    branch_number=branch_number,
+                    status=NodeStatus.PENDING,
+                    umg=umg
                 )
                 
                 children.append(child)
+                branch_number += 1
                 
             except UnificationError:
-                # Esta cláusula no unifica, continuar
+                # Esta cláusula no unifica, continuar con la siguiente
                 continue
         
         return children
     
     def _rename_clause(self, clause: Clause, suffix: str) -> Clause:
-        """
-        Renombra todas las variables en una cláusula.
-        
-        Args:
-            clause: Cláusula original
-            suffix: Sufijo a agregar a las variables
-        
-        Returns:
-            Nueva cláusula con variables renombradas
-        """
+        """Renombra variables de una cláusula"""
         new_head = rename_variables(clause.head, suffix)
         new_body = None
         
         if clause.body:
-            new_body = [
-                rename_variables(goal, suffix) 
-                for goal in clause.body
-            ]
+            new_body = [rename_variables(goal, suffix) for goal in clause.body]
         
         return Clause(head=new_head, body=new_body)
     
-    def resolve_step_by_step(self, query_goals: List[Compound],
-                             strategy: str = "leftmost"):
-        """
-        Generador que produce el árbol paso a paso.
+    def _calculate_umg(self, old_subst: Substitution, new_subst: Substitution) -> str:
+        """Calcula el UMG (Unificador Más General) para mostrar"""
+        # Mostrar solo las nuevas bindings
+        new_bindings = {}
+        for var, term in new_subst.items():
+            if var not in old_subst or old_subst[var] != term:
+                new_bindings[var] = term
         
-        Útil para animaciones y visualización incremental.
+        if not new_bindings:
+            return "{}"
         
-        Yields:
-            (tree, current_node) en cada paso
-        """
+        items = [f"{var.name} / {term}" for var, term in new_bindings.items()]
+        return "{ " + ", ".join(items) + " }"
+    
+    def _calculate_src(self, subst: Substitution, original_goals: List[Compound]) -> str:
+        """Calcula el SRC (Substitución Resultado Computado)"""
+        # Extraer solo las variables de la consulta original
+        original_vars = set()
+        for goal in original_goals:
+            original_vars.update(goal.get_variables())
+        
+        relevant_bindings = {}
+        for var in original_vars:
+            if var in subst:
+                relevant_bindings[var] = subst[var]
+        
+        if not relevant_bindings:
+            return "{}"
+        
+        items = [f"{var.name} / {term}" for var, term in relevant_bindings.items()]
+        return "{ " + ", ".join(items) + " }"
+    
+    def resolve_step_by_step(self, query_goals: List[Compound], strategy: str = "leftmost"):
+        """Generador para resolución paso a paso"""
+        global _node_counter
+        _node_counter = 0
+        
         root = SLDNode(
             goals=query_goals,
             substitution=Substitution(),
             depth=0,
+            branch_number=0,
             status=NodeStatus.PENDING
         )
         
         tree = SLDTree(root=root, program=self.program, max_depth=self.max_depth)
         queue = [root]
         
-        yield tree, root  # Estado inicial
+        yield tree, root
         
         while queue:
             node = queue.pop(0)
@@ -367,10 +315,11 @@ class SLDResolver:
             
             if node.is_success():
                 node.status = NodeStatus.SUCCESS
+                node.src = self._calculate_src(node.substitution, query_goals)
                 yield tree, node
                 continue
             
-            children = self._expand_node(node, strategy)
+            children = self._expand_node_exhaustive(node, strategy)
             
             if len(children) == 0:
                 node.status = NodeStatus.FAILURE
@@ -380,7 +329,7 @@ class SLDResolver:
                 tree.all_nodes.extend(children)
                 queue.extend(children)
             
-            yield tree, node  # Después de expandir
+            yield tree, node
 
 
 # ============================================================================
@@ -388,33 +337,33 @@ class SLDResolver:
 # ============================================================================
 
 def test_sld_resolution():
-    """Tests del motor SLD"""
-    from ..parser import parse, parse_query  
+    """Test con el ejemplo de la foto"""
+    from ..parser import parse, parse_query
     
     print("=" * 70)
-    print("TESTS DE RESOLUCIÓN SLD")
+    print("TEST DE RESOLUCIÓN SLD EXHAUSTIVA")
     print("=" * 70)
     
-    # Programa de ejemplo
+    # Programa del ejemplo
     code = """
-        padre(juan, maria).
-        padre(juan, pedro).
-        padre(pedro, ana).
+        padre(luis, alicia).
+        padre(luis, jose).
+        madre(alicia, dario).
+        madre(jose, ana).
         
-        abuelo(X, Z) :- padre(X, Y), padre(Y, Z).
+        abuelo(X, Y) :- padre(X, Z), madre(Z, Y).
     """
     
     program = parse(code)
     print("\nPrograma:")
     print(program)
     
-    # Test 1: Consulta simple
     print("\n" + "=" * 70)
-    print("Test 1: Consulta simple - ?- padre(juan, X).")
+    print("Consulta: ?- abuelo(luis, X).")
     print("=" * 70)
     
-    query = parse_query("?- padre(juan, X).")
-    resolver = SLDResolver(program)
+    query = parse_query("?- abuelo(luis, X).")
+    resolver = SLDResolver(program, max_depth=10)
     tree = resolver.resolve(query.goals)
     
     print(f"\nNodos generados: {len(tree.all_nodes)}")
@@ -424,28 +373,11 @@ def test_sld_resolution():
     solutions = tree.find_solutions()
     print(f"\nSoluciones encontradas: {len(solutions)}")
     for i, (node, subst) in enumerate(solutions, 1):
-        print(f"  {i}. {subst}")
-    
-    # Test 2: Consulta con regla
-    print("\n" + "=" * 70)
-    print("Test 2: Consulta con regla - ?- abuelo(juan, Z).")
-    print("=" * 70)
-    
-    query = parse_query("?- abuelo(juan, Z).")
-    tree = resolver.resolve(query.goals)
-    
-    print(f"\nNodos generados: {len(tree.all_nodes)}")
-    print("\nÁrbol de resolución:")
-    print_tree(tree.root, indent=0)
-    
-    solutions = tree.find_solutions()
-    print(f"\nSoluciones encontradas: {len(solutions)}")
-    for i, (node, subst) in enumerate(solutions, 1):
-        print(f"  {i}. {subst}")
+        print(f"  {i}. SRC = {node.src}")
 
 
 def print_tree(node: SLDNode, indent: int = 0):
-    """Imprime el árbol de forma jerárquica"""
+    """Imprime el árbol jerárquicamente"""
     prefix = "  " * indent
     status_symbol = {
         NodeStatus.SUCCESS: "✓",

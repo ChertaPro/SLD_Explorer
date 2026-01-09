@@ -34,14 +34,16 @@ const nodeTypes = {
 const EXAMPLES = [
   {
     name: 'Relaciones Familiares',
-    program: `% Hechos
-padre(juan, maria).
-padre(juan, pedro).
-padre(pedro, ana).
+    program: `% % Hechos
+padre(luis, alicia).
+padre(luis, jose).
+madre(alicia, dario).
+padre(jose,ana).
 
 % Reglas
-abuelo(X, Z) :- padre(X, Y), padre(Y, Z).`,
-    query: '?- abuelo(juan, Z).'
+abuelo(X, Y) :- padre(X, Z), madre(Z, Y).
+abuelo(X, Y) :- padre(X, Z), padre(Z, Y).`,
+    query: '?- abuelo(luis, X).'
   },
   {
     name: 'Listas - Append',
