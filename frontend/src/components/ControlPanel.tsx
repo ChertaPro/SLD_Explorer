@@ -4,13 +4,12 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Play, RotateCcw, Download, Settings, Zap } from 'lucide-react';
+import { Play, RotateCcw, Settings, Zap } from 'lucide-react';
 import type { Stats } from '../types/types';
 
 interface ControlPanelProps {
   onResolve: () => void;
   onReset: () => void;
-  onExport: () => void;
   isResolving: boolean;
   strategy: 'leftmost' | 'rightmost';
   onStrategyChange: (strategy: 'leftmost' | 'rightmost') => void;
@@ -22,7 +21,6 @@ interface ControlPanelProps {
 export const ControlPanel: React.FC<ControlPanelProps> = ({
   onResolve,
   onReset,
-  onExport,
   isResolving,
   strategy,
   onStrategyChange,
@@ -69,43 +67,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           )}
         </motion.button>
 
-        <div className="grid grid-cols-2 gap-3">
-          <motion.button
-            onClick={onReset}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="
-              py-3 px-4
-              bg-slate-700 hover:bg-slate-600
-              text-white font-semibold
-              rounded-lg shadow-md
-              transition-all duration-200
-              flex items-center justify-center gap-2
-            "
-          >
-            <RotateCcw size={18} />
-            <span>Reset</span>
-          </motion.button>
-
-          <motion.button
-            onClick={onExport}
-            disabled={!stats}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="
-              py-3 px-4
-              bg-slate-700 hover:bg-slate-600
-              disabled:bg-slate-800 disabled:text-gray-500
-              text-white font-semibold
-              rounded-lg shadow-md
-              transition-all duration-200
-              flex items-center justify-center gap-2
-            "
-          >
-            <Download size={18} />
-            <span>Export</span>
-          </motion.button>
-        </div>
+        <motion.button
+          onClick={onReset}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="
+            w-full py-3 px-4
+            bg-slate-700 hover:bg-slate-600
+            text-white font-semibold
+            rounded-lg shadow-md
+            transition-all duration-200
+            flex items-center justify-center gap-2
+          "
+        >
+          <RotateCcw size={18} />
+          <span>Reset</span>
+        </motion.button>
       </div>
 
       {/* Settings */}

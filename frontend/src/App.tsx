@@ -16,15 +16,16 @@ import {
   AlertCircle,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Code2
 } from 'lucide-react';
 
 import { CustomNode } from './components/CustomNode';
 import { CodeEditor } from './components/CodeEditor';
 import { ControlPanel } from './components/ControlPanel';
-import { useSLDTree, useExamples } from './hooks/useSLDTree';
+import { useSLDTree } from './hooks/useSLDTree';
 import { api, handleAPIError } from './services/api';
-import type { Solution } from './types/types';
+import type { Solution } from './types';
 
 const nodeTypes = {
   custom: CustomNode,
@@ -68,14 +69,15 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [stats, setStats] = useState<any>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
 
   // Custom hooks
   const { nodes, edges, layoutTree, clearTree } = useSLDTree();
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(nodes);
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(edges);
 
-  // Sincronizar nodes/edges con el hook
+  // Sincronizar nodes/edges
   useEffect(() => {
     setFlowNodes(nodes);
     setFlowEdges(edges);
@@ -113,29 +115,6 @@ export default function App() {
     setError(null);
   }, [clearTree]);
 
-  // Export
-  const handleExport = useCallback(() => {
-    const data = {
-      program,
-      query,
-      strategy,
-      maxDepth,
-      solutions,
-      stats,
-      timestamp: new Date().toISOString(),
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { 
-      type: 'application/json' 
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sld-tree-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [program, query, strategy, maxDepth, solutions, stats]);
-
   // Cargar ejemplo
   const loadExample = useCallback((example: typeof EXAMPLES[0]) => {
     setProgram(example.program);
@@ -149,7 +128,7 @@ export default function App() {
       <motion.header 
         initial={{ y: -100 }}
         animate={{ y: 0 }}
-        className="bg-black/40 backdrop-blur-md border-b border-purple-500/30 px-6 py-4 z-10"
+        className="bg-black/40 backdrop-blur-md border-b border-purple-500/30 px-6 py-3 z-10"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -160,39 +139,50 @@ export default function App() {
               <Sparkles className="w-8 h-8 text-purple-400" />
             </motion.div>
             <div>
-              <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
+              <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
                 SLD-Explorer
               </h1>
-              <p className="text-sm text-gray-400">
+              <p className="text-xs text-gray-400">
                 Visualizador interactivo de árboles SLD
               </p>
             </div>
           </div>
 
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-2 text-white hover:bg-white/10 rounded-lg"
-          >
-            {sidebarOpen ? <ChevronLeft /> : <ChevronRight />}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setLeftPanelOpen(!leftPanelOpen)}
+              className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="Toggle editor"
+            >
+              <Code2 size={20} />
+            </button>
+            <button
+              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+              className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="Toggle controles"
+            >
+              {rightPanelOpen ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+            </button>
+          </div>
         </div>
       </motion.header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar */}
+      {/* Main Content - 3 Panels */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* LEFT PANEL - Code Editor */}
         <AnimatePresence>
-          {sidebarOpen && (
+          {leftPanelOpen && (
             <motion.aside
               initial={{ x: -400, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -400, opacity: 0 }}
-              className="w-96 bg-black/40 backdrop-blur-sm border-r border-purple-500/30 flex flex-col overflow-hidden"
+              className="w-[500px] bg-black/40 backdrop-blur-sm border-r border-purple-500/30 flex flex-col overflow-hidden"
             >
               {/* Examples */}
-              <div className="p-4 border-b border-purple-500/30">
-                <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                  <BookOpen size={20} className="text-purple-400" />
+              <div className="p-3 border-b border-purple-500/30">
+                <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                  <BookOpen size={16} className="text-purple-400" />
                   Ejemplos
                 </h2>
                 <div className="flex gap-2 flex-wrap">
@@ -202,7 +192,7 @@ export default function App() {
                       onClick={() => loadExample(ex)}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      className="px-3 py-2 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 rounded-lg text-sm font-medium transition-all"
+                      className="px-2 py-1 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 rounded text-xs font-medium transition-all"
                     >
                       {ex.name}
                     </motion.button>
@@ -217,8 +207,8 @@ export default function App() {
                   value={program}
                   onChange={setProgram}
                   placeholder="Escribe tu programa aquí..."
-                  rows={12}
-                  validate={true}
+                  rows={20}
+                  validate={false}
                 />
               </div>
 
@@ -232,76 +222,11 @@ export default function App() {
                   rows={3}
                 />
               </div>
-
-              {/* Controls */}
-              <div className="p-4 border-t border-purple-500/30">
-                <ControlPanel
-                  onResolve={handleResolve}
-                  onReset={handleReset}
-                  onExport={handleExport}
-                  isResolving={isResolving}
-                  strategy={strategy}
-                  onStrategyChange={setStrategy}
-                  maxDepth={maxDepth}
-                  onMaxDepthChange={setMaxDepth}
-                  stats={stats}
-                />
-              </div>
-
-              {/* Solutions */}
-              {solutions.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-green-900/20 border-t border-green-500/30 max-h-48 overflow-y-auto"
-                >
-                  <h3 className="text-sm font-bold text-green-300 mb-2 flex items-center gap-2">
-                    <Lightbulb size={16} />
-                    Soluciones ({solutions.length})
-                  </h3>
-                  {solutions.map((sol, idx) => (
-                    <motion.div
-                      key={idx}
-                      initial={{ x: -20, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="bg-green-500/20 p-2 rounded-lg mb-2"
-                    >
-                      <div className="text-xs text-green-400 font-mono">
-                        {sol.substitution}
-                      </div>
-                    </motion.div>
-                  ))}
-                </motion.div>
-              )}
-
-              {/* Error */}
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="p-4 bg-red-900/20 border-t border-red-500/30"
-                >
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="text-sm font-bold text-red-300 mb-1">Error</h3>
-                      <p className="text-xs text-red-200 font-mono">{error}</p>
-                    </div>
-                    <button
-                      onClick={() => setError(null)}
-                      className="ml-auto text-red-400 hover:text-red-200"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                </motion.div>
-              )}
             </motion.aside>
           )}
         </AnimatePresence>
 
-        {/* Tree Visualization */}
+        {/* CENTER PANEL - Tree Visualization */}
         <div className="flex-1 relative">
           {flowNodes.length === 0 ? (
             <EmptyState />
@@ -334,12 +259,108 @@ export default function App() {
                   }
                 }}
               />
+              
+              {/* Legend */}
               <Panel position="top-right" className="bg-slate-900/90 backdrop-blur-sm p-3 rounded-lg border border-purple-500/30">
                 <Legend />
               </Panel>
             </ReactFlow>
           )}
         </div>
+
+        {/* RIGHT PANEL - Controls & Stats */}
+        <AnimatePresence>
+          {rightPanelOpen && (
+            <motion.aside
+              initial={{ x: 400, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 400, opacity: 0 }}
+              className="w-[380px] bg-black/40 backdrop-blur-sm border-l border-purple-500/30 flex flex-col overflow-hidden"
+            >
+              {/* Controls */}
+              <div className="p-4 border-b border-purple-500/30">
+                <ControlPanel
+                  onResolve={handleResolve}
+                  onReset={handleReset}
+                  isResolving={isResolving}
+                  strategy={strategy}
+                  onStrategyChange={setStrategy}
+                  maxDepth={maxDepth}
+                  onMaxDepthChange={setMaxDepth}
+                  stats={stats}
+                />
+              </div>
+
+              {/* Solutions */}
+              {solutions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 bg-green-900/20 border-b border-green-500/30 overflow-y-auto"
+                >
+                  <h3 className="text-sm font-bold text-green-300 mb-3 flex items-center gap-2">
+                    <Lightbulb size={16} />
+                    Soluciones Encontradas ({solutions.length})
+                  </h3>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {solutions.map((sol, idx) => (
+                      <motion.div
+                        key={idx}
+                        initial={{ x: 20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="bg-green-500/20 p-3 rounded-lg border border-green-500/30"
+                      >
+                        <div className="text-xs font-bold text-green-400 mb-1">
+                          Solución #{idx + 1}
+                        </div>
+                        <div className="text-xs text-green-300 font-mono break-all">
+                          {sol.substitution}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="p-4 bg-red-900/20 border-t border-red-500/30"
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="text-sm font-bold text-red-300 mb-1">Error</h3>
+                      <p className="text-xs text-red-200 font-mono break-words">{error}</p>
+                    </div>
+                    <button
+                      onClick={() => setError(null)}
+                      className="text-red-400 hover:text-red-200 transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Info panel cuando no hay árbol */}
+              {!stats && !error && flowNodes.length === 0 && (
+                <div className="flex-1 flex items-center justify-center p-6">
+                  <div className="text-center space-y-3">
+                    <div className="text-4xl">🚀</div>
+                    <p className="text-sm text-gray-400">
+                      Escribe tu código Prolog y presiona<br/>
+                      <span className="text-purple-400 font-bold">"Resolver Consulta"</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </motion.aside>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -375,7 +396,8 @@ const EmptyState = () => (
           Árbol SLD vacío
         </h3>
         <p className="text-gray-500 text-lg">
-          Carga un ejemplo o escribe tu código Prolog
+          Escribe tu código Prolog y presiona<br/>
+          <span className="text-purple-400 font-bold">"Resolver Consulta"</span>
         </p>
       </div>
     </motion.div>
