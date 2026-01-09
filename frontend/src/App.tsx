@@ -25,7 +25,7 @@ import { CodeEditor } from './components/CodeEditor';
 import { ControlPanel } from './components/ControlPanel';
 import { useSLDTree } from './hooks/useSLDTree';
 import { api, handleAPIError } from './services/api';
-import type { Solution } from './types';
+import type { Solution } from './types/types';
 
 const nodeTypes = {
   custom: CustomNode,

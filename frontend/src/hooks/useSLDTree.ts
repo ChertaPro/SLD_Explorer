@@ -1,8 +1,9 @@
 /**
  * hooks/useSLDTree.ts - Hook personalizado para manejo del árbol SLD
+ * Versión mejorada con UMG y SRC
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { Node, Edge, Position } from 'reactflow';
 import type { SLDTreeData, SLDNodeData, CustomNodeData } from '../types/types';
 
@@ -141,8 +142,11 @@ export const useSLDTree = (): UseTreeResult => {
               substitution: node.substitution,
               status: node.status,
               depth: node.depth,
+              branch_number: node.branch_number,
               selected_goal_index: node.selected_goal_index,
               clause_used: node.clause_used,
+              umg: node.umg || '{}',  // Unificador Más General
+              src: node.src || '{}',  // Substitución Resultado Computado
               ...colors,
             },
             sourcePosition: Position.Bottom,

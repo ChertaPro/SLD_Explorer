@@ -1,11 +1,12 @@
 /**
  * components/CustomNode.tsx - Nodo personalizado para React Flow
+ * Versión mejorada con UMG, SRC y Cláusula usada
  */
 
 import React from 'react';
 import { Handle, Position } from 'reactflow';
 import { motion } from 'framer-motion';
-import { CheckCircle2, XCircle, ArrowRight, Circle } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowRight, Circle, FileCode, Zap, Sparkles } from 'lucide-react';
 import type { CustomNodeData } from '../types/types';
 
 interface CustomNodeProps {
@@ -36,6 +37,7 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
           border: 'border-green-500',
           text: 'text-green-900',
           badge: 'bg-green-500',
+          glow: 'bg-green-500',
         };
       case 'failure':
         return {
@@ -43,6 +45,7 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
           border: 'border-red-500',
           text: 'text-red-900',
           badge: 'bg-red-500',
+          glow: 'bg-red-500',
         };
       case 'expanded':
         return {
@@ -50,6 +53,7 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
           border: 'border-blue-500',
           text: 'text-blue-900',
           badge: 'bg-blue-500',
+          glow: 'bg-blue-500',
         };
       default:
         return {
@@ -57,6 +61,7 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
           border: 'border-gray-400',
           text: 'text-gray-900',
           badge: 'bg-gray-500',
+          glow: 'bg-gray-500',
         };
     }
   };
@@ -77,7 +82,7 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
         }}
         whileHover={{ scale: 1.05 }}
         className={`
-          relative min-w-[280px] max-w-[350px]
+          relative min-w-[300px] max-w-[380px]
           bg-gradient-to-br ${colors.bg}
           border-2 ${colors.border}
           rounded-xl shadow-lg hover:shadow-2xl
@@ -136,29 +141,76 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
               className="text-center py-4"
             >
               <div className="text-4xl mb-2">✅</div>
-              <div className="text-lg font-bold text-green-700">Success</div>
+              <div className="text-lg font-bold text-green-700">Success!</div>
+              <div className="text-xs text-green-600 mt-1">Goals satisfechos</div>
             </motion.div>
           )}
         </div>
 
-        {/* Footer - Substitution */}
-        {data.substitution && data.substitution !== '{}' && (
-          <div className="p-4 bg-white/40 border-t border-gray-200 rounded-b-xl">
-            <div className="text-xs font-bold text-gray-700 mb-1">Substitution (θ):</div>
-            <div className="text-xs font-mono text-gray-800 bg-purple-100 px-3 py-2 rounded-lg border border-purple-300">
-              {data.substitution}
+        {/* UMG (Unificador Más General) - Para todos los nodos excepto el raíz */}
+        {data.umg && data.umg !== '{}' && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="px-4 pb-3"
+          >
+            <div className="bg-purple-50 p-3 rounded-lg border-2 border-purple-300">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="w-4 h-4 text-purple-600" />
+                <span className="text-xs font-bold text-purple-700">
+                  UMG{data.depth} (Unificación)
+                </span>
+              </div>
+              <div className="text-xs font-mono text-purple-900 bg-white/70 px-3 py-2 rounded-lg break-all">
+                {data.umg}
+              </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
-        {/* Clause Used */}
+        {/* SRC (Substitución Resultado Computado) - Solo para nodos SUCCESS */}
+        {data.status === 'success' && data.src && data.src !== '{}' && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2 }}
+            className="px-4 pb-3"
+          >
+            <div className="bg-gradient-to-r from-green-100 to-emerald-100 p-4 rounded-lg border-2 border-green-400 shadow-md">
+              <div className="flex items-center gap-2 mb-2">
+                <motion.div
+                  animate={{ rotate: [0, 360] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                >
+                  <Sparkles className="w-5 h-5 text-green-600" />
+                </motion.div>
+                <span className="text-sm font-bold text-green-800">
+                  SRC (Solución Final)
+                </span>
+              </div>
+              <div className="text-sm font-mono font-bold text-green-900 bg-white/80 px-4 py-3 rounded-lg border border-green-300 break-all">
+                {data.src}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Cláusula Usada */}
         {data.clause_used && (
-          <div className="p-4 bg-purple-50 border-t border-purple-200">
-            <div className="text-xs font-bold text-purple-700 mb-1">Clause Applied:</div>
-            <div className="text-xs font-mono text-purple-900 bg-white/70 px-3 py-2 rounded-lg">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="p-4 bg-indigo-50 border-t border-indigo-200 rounded-b-xl"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <FileCode className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-700">Cláusula Aplicada:</span>
+            </div>
+            <div className="text-xs font-mono text-indigo-900 bg-white/70 px-3 py-2 rounded-lg border border-indigo-300 break-all">
               {data.clause_used}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Glow effect para nodos importantes */}
@@ -166,7 +218,7 @@ export const CustomNode: React.FC<CustomNodeProps> = ({ data }) => {
           <motion.div
             className={`
               absolute -inset-1 rounded-xl blur-lg opacity-30
-              ${data.status === 'success' ? 'bg-green-500' : 'bg-red-500'}
+              ${colors.glow}
             `}
             animate={{
               opacity: [0.3, 0.6, 0.3],

@@ -1,5 +1,6 @@
 /**
- * types/index.ts - Type definitions para SLD-Explorer
+ * types/types.ts - Type definitions para SLD-Explorer
+ * Versión mejorada con UMG y SRC
  */
 
 // ============================================================================
@@ -44,9 +45,12 @@ export interface SLDNodeData {
   substitution: string;
   status: 'pending' | 'success' | 'failure' | 'expanded';
   depth: number;
+  branch_number: number;
   selected_goal_index: number;
   selected_goal: string | null;
   clause_used: string | null;
+  umg: string;  // Unificador Más General
+  src: string;  // Substitución Resultado Computado (solo en success)
   children: string[];
   parent: string | null;
 }
@@ -58,6 +62,7 @@ export interface SLDTreeData {
   solutions: Array<{
     node_id: string;
     substitution: string;
+    src: string;
   }>;
 }
 
@@ -90,8 +95,11 @@ export interface CustomNodeData {
   substitution: string;
   status: 'pending' | 'success' | 'failure' | 'expanded';
   depth: number;
+  branch_number: number;
   selected_goal_index: number;
   clause_used: string | null;
+  umg: string;  // Unificador Más General
+  src: string;  // Substitución Resultado Computado
   isAnimating?: boolean;
 }
 
