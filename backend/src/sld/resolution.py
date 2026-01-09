@@ -1,15 +1,15 @@
 """
 resolution.py - Motor de Resolución SLD (Versión Exhaustiva)
 
-Modificado para explorar TODAS las posibilidades y generar árbol completo
-con renombramiento de variables por profundidad/rama.
+Modificado para mostrar SRC completo con valores finales aplicados
+FIX: Calcula el SRC aplicando recursivamente todas las sustituciones
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Set
 from enum import Enum
 
-from ..parser.terms import Term, Variable, Compound, Substitution  
+from ..parser.terms import Term, Variable, Compound, Atom, Number, Substitution  
 from ..parser import Clause, Program  
 from ..unification.unify import unify, rename_variables, UnificationError  
 
@@ -38,9 +38,9 @@ class SLDNode:
     selected_goal_index: int = 0
     status: NodeStatus = NodeStatus.PENDING
     depth: int = 0
-    branch_number: int = 0  # Número de rama en ese nivel
-    umg: str = ""  # Unificador Más General
-    src: str = ""  # Substitución Resultado Computado (solo en success)
+    branch_number: int = 0
+    umg: str = ""
+    src: str = ""
     
     def is_success(self) -> bool:
         return len(self.goals) == 0
@@ -130,7 +130,7 @@ class SLDResolver:
     def __init__(self, program: Program, max_depth: int = 20):
         self.program = program
         self.max_depth = max_depth
-        self.clause_usage_counter = {}  # Contador por (depth, branch)
+        self.clause_usage_counter = {}
     
     def resolve(self, query_goals: List[Compound], strategy: str = "leftmost") -> SLDTree:
         """Resolución SLD exhaustiva"""
@@ -163,12 +163,12 @@ class SLDResolver:
             # Éxito
             if node.is_success():
                 node.status = NodeStatus.SUCCESS
-                # Calcular SRC (variables originales de la consulta)
-                node.src = self._calculate_src(node.substitution, query_goals)
+                # Calcular SRC con valores finales aplicados
+                node.src = self._calculate_src_complete(node.substitution, query_goals)
                 continue
             
             # Expandir nodo con TODAS las cláusulas aplicables
-            children = self._expand_node_exhaustive(node, strategy)
+            children = self._expand_node_exhaustive(node, strategy, query_goals)
             
             if len(children) == 0:
                 node.status = NodeStatus.FAILURE
@@ -180,7 +180,7 @@ class SLDResolver:
         
         return tree
     
-    def _expand_node_exhaustive(self, node: SLDNode, strategy: str) -> List[SLDNode]:
+    def _expand_node_exhaustive(self, node: SLDNode, strategy: str, original_goals: List[Compound]) -> List[SLDNode]:
         """Expande un nodo probando TODAS las cláusulas del programa"""
         # Seleccionar goal
         if strategy == "leftmost":
@@ -197,7 +197,7 @@ class SLDResolver:
         node.selected_goal_index = goal_index
         
         children = []
-        branch_number = 1  # Contador de ramas en este nivel
+        branch_number = 1
         
         # Probar CADA cláusula del programa
         for clause in self.program.clauses:
@@ -269,23 +269,159 @@ class SLDResolver:
         items = [f"{var.name} / {term}" for var, term in new_bindings.items()]
         return "{ " + ", ".join(items) + " }"
     
-    def _calculate_src(self, subst: Substitution, original_goals: List[Compound]) -> str:
-        """Calcula el SRC (Substitución Resultado Computado)"""
+    def _calculate_src_complete(self, subst: Substitution, original_goals: List[Compound]) -> str:
+        """
+        Calcula el SRC (Sustitución Resultado Computado) COMPLETO.
+        
+        FIX: Aplica recursivamente TODAS las sustituciones, incluyendo las que
+        están dentro de términos compuestos (listas, estructuras, etc.)
+        
+        Por ejemplo:
+        - Si X -> [H_11|R_11], H_11 -> 1, R_11 -> [1]
+        - Entonces muestra: X / [1, 1] (no X / [H_11|R_11])
+        """
         # Extraer solo las variables de la consulta original
         original_vars = set()
         for goal in original_goals:
             original_vars.update(goal.get_variables())
         
         relevant_bindings = {}
+        
         for var in original_vars:
             if var in subst:
-                relevant_bindings[var] = subst[var]
+                # APLICAR LA SUSTITUCIÓN COMPLETA AL TÉRMINO
+                final_value = subst[var]
+                
+                # Aplicar recursivamente la sustitución hasta que no haya más cambios
+                final_value = self._apply_substitution_recursively(final_value, subst)
+                
+                relevant_bindings[var] = final_value
         
         if not relevant_bindings:
             return "{}"
         
-        items = [f"{var.name} / {term}" for var, term in relevant_bindings.items()]
+        # Ordenar por nombre de variable para consistencia
+        sorted_items = sorted(relevant_bindings.items(), key=lambda x: x[0].name)
+        items = [f"{var.name} / {self._term_to_readable_string(term)}" 
+                 for var, term in sorted_items]
         return "{ " + ", ".join(items) + " }"
+    
+    def _apply_substitution_recursively(self, term: Term, subst: Substitution, 
+                                       visited: Optional[Set[Variable]] = None) -> Term:
+        """
+        Aplica recursivamente la sustitución a un término hasta que no haya más cambios.
+        
+        Esto maneja:
+        1. Variables que mapean a otras variables
+        2. Términos compuestos que contienen variables
+        3. Listas que contienen variables
+        
+        Args:
+            term: Término a procesar
+            subst: Sustitución a aplicar
+            visited: Set para prevenir loops infinitos
+        
+        Returns:
+            Término con todas las sustituciones aplicadas
+        """
+        if visited is None:
+            visited = set()
+        
+        # Caso base: Variable
+        if isinstance(term, Variable):
+            # Prevenir loops infinitos (occur check)
+            if term in visited:
+                return term
+            visited.add(term)
+            
+            # Si la variable tiene una sustitución, seguir la cadena
+            if term in subst:
+                next_term = subst[term]
+                # Aplicar recursivamente por si next_term también tiene sustituciones
+                return self._apply_substitution_recursively(next_term, subst, visited)
+            else:
+                return term
+        
+        # Caso: Término compuesto (incluye listas en representación Prolog)
+        elif isinstance(term, Compound):
+            # Aplicar sustitución a cada argumento
+            new_args = tuple(
+                self._apply_substitution_recursively(arg, subst, visited)
+                for arg in term.args
+            )
+            
+            # Si los argumentos cambiaron, crear nuevo Compound
+            if new_args != term.args:
+                return Compound(term.functor, new_args)
+            else:
+                return term
+        
+        # Caso: Átomo, Number, etc. (sin variables)
+        else:
+            return term
+    
+    def _term_to_readable_string(self, term: Term) -> str:
+        """
+        Convierte un término a string legible, con formato especial para listas.
+        
+        Args:
+            term: Término a convertir
+        
+        Returns:
+            String formateado
+        """
+        # Si es una lista en representación Prolog [H|T], convertir a notación de lista
+        if isinstance(term, Compound):
+            # Detectar patrón de lista: .(H, T)
+            if term.functor == "." and len(term.args) == 2:
+                return self._list_to_readable_string(term)
+            
+            # Detectar lista vacía: []
+            if term.functor == "[]" and len(term.args) == 0:
+                return "[]"
+        
+        # Caso por defecto: usar __str__ del término
+        return str(term)
+    
+    def _list_to_readable_string(self, term: Term) -> str:
+        """
+        Convierte una lista en representación Prolog a notación [1, 2, 3].
+        
+        Args:
+            term: Término que representa una lista (functor '.')
+        
+        Returns:
+            String con formato de lista
+        """
+        elements = []
+        current = term
+        
+        # Recorrer la lista hasta encontrar [] o una variable
+        while isinstance(current, Compound) and current.functor == "." and len(current.args) == 2:
+            head = current.args[0]
+            tail = current.args[1]
+            
+            elements.append(str(head))
+            current = tail
+        
+        # Caso: lista completa terminada en []
+        if isinstance(current, Compound) and current.functor == "[]":
+            return "[" + ", ".join(elements) + "]"
+        
+        # Caso: lista impropia [H|T] donde T no es []
+        else:
+            if elements:
+                return "[" + ", ".join(elements) + " | " + str(current) + "]"
+            else:
+                return str(term)
+    
+    def _get_final_value(self, var: Variable, subst: Substitution) -> Term:
+        """
+        DEPRECATED: Usar _apply_substitution_recursively en su lugar.
+        
+        Obtiene el valor final de una variable siguiendo la cadena de sustituciones.
+        """
+        return self._apply_substitution_recursively(var, subst)
     
     def resolve_step_by_step(self, query_goals: List[Compound], strategy: str = "leftmost"):
         """Generador para resolución paso a paso"""
@@ -315,11 +451,11 @@ class SLDResolver:
             
             if node.is_success():
                 node.status = NodeStatus.SUCCESS
-                node.src = self._calculate_src(node.substitution, query_goals)
+                node.src = self._calculate_src_complete(node.substitution, query_goals)
                 yield tree, node
                 continue
             
-            children = self._expand_node_exhaustive(node, strategy)
+            children = self._expand_node_exhaustive(node, strategy, query_goals)
             
             if len(children) == 0:
                 node.status = NodeStatus.FAILURE
@@ -376,6 +512,39 @@ def test_sld_resolution():
         print(f"  {i}. SRC = {node.src}")
 
 
+def test_src_with_lists():
+    """Test para verificar que el SRC muestra listas correctamente"""
+    from ..parser import parse, parse_query
+    
+    print("\n" + "=" * 70)
+    print("TEST DE SRC CON LISTAS")
+    print("=" * 70)
+    
+    # Programa append
+    code = """
+        append([], L, L).
+        append([H|T], L, [H|R]) :- append(T, L, R).
+    """
+    
+    program = parse(code)
+    print("\nPrograma:")
+    print(program)
+    
+    print("\n" + "=" * 70)
+    print("Consulta: ?- append([1, 2], [3, 4], X).")
+    print("=" * 70)
+    
+    query = parse_query("?- append([1, 2], [3, 4], X).")
+    resolver = SLDResolver(program, max_depth=10)
+    tree = resolver.resolve(query.goals)
+    
+    solutions = tree.find_solutions()
+    print(f"\nSoluciones encontradas: {len(solutions)}")
+    for i, (node, subst) in enumerate(solutions, 1):
+        print(f"  {i}. SRC = {node.src}")
+        print(f"     (Esperado: X / [1, 2, 3, 4])")
+
+
 def print_tree(node: SLDNode, indent: int = 0):
     """Imprime el árbol jerárquicamente"""
     prefix = "  " * indent
@@ -397,3 +566,4 @@ def print_tree(node: SLDNode, indent: int = 0):
 
 if __name__ == "__main__":
     test_sld_resolution()
+    test_src_with_lists()
