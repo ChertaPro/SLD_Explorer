@@ -1,0 +1,5 @@
+python -m src.parser,terms
+python -m src.parser.lexer
+python -m src.parser.parser
+python -m src.unification.unify
+python -m src.sld.resolution
