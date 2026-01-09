@@ -9,7 +9,7 @@ import type {
   ResolveRequest,
   ResolveResponse,
   ExamplesResponse,
-} from '../types';
+} from '../types/types';
 
 // ============================================================================
 // CONFIGURACIÓN
